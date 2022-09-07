@@ -1,17 +1,38 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"html/template"
 	"log"
+	"math/rand"
 	"net/http"
+	"time"
 
+	"github.com/go-redis/redis/v8"
 	"github.com/gorilla/mux"
 )
 
 const (
+	// For server
 	IP_Addr = "127.0.0.1"
 	IP_Port = 7000
+	// For connect to Redis
+	Redis_IP     = "localhost:6379"
+	Redis_Passwd = ""
+	Redis_DB     = 0
+	// Length of short string
+	Short_Len = 5
+	// Experation of key ~ 6 month
+	// EXPERATION = 60*60*24*30*6
+	EXPERATION = 0
+)
+
+var (
+	rdb     *redis.Client
+	ctx     context.Context
+	letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
 )
 
 func check(err error) {
@@ -23,9 +44,25 @@ func check(err error) {
 }
 
 func main() {
+	// Connect to Redis and create context
+	ctx = context.Background()
+	rdb = redis.NewClient(&redis.Options{
+		Addr:     Redis_IP,
+		Password: Redis_Passwd, // no password set
+		DB:       Redis_DB,     // use default DB
+	})
+	defer rdb.Close()
+
+	// Check if Redis work and we are connected
+	pong, err := rdb.Ping(ctx).Result()
+	check(err)
+	log.Println("Redis ping :", pong)
+	// For random
+	rand.Seed(time.Now().UnixNano())
+
 	rtr := mux.NewRouter()
 	rtr.HandleFunc("/", index)
-	rtr.HandleFunc("/short", short)
+	rtr.HandleFunc("/short", short).Methods("POST")
 	rtr.HandleFunc("/status/{req}", status)
 	rtr.HandleFunc("/{req}", req)
 
@@ -46,17 +83,69 @@ func index(w http.ResponseWriter, r *http.Request) {
 
 // Process request
 func req(w http.ResponseWriter, r *http.Request) {
-	log.Printf("req %s", r.URL)
-	// -- Request to Redis by URL and get long URL
-	// -- Redirect to url
+	url := r.URL.Path
+	log.Printf("req %s", url)
+	// Remove leading /
+	short_name := url[1:]
+	log.Printf("Short is %s", short_name)
+	short_key := "short_" + short_name + "_url"
+	short_num := "short_" + short_name + "_num"
+
+	val, err := rdb.Get(ctx, short_key).Result()
+	// Check if short name not present
+	//if errors.Is(err, redis.Nil) {
+
+	//}
+	check(err)
+
+	// Incrise counter
+	rdb.Incr(ctx, short_num)
+
+	log.Printf("Redirected to %s", val)
+	http.Redirect(w, r, val, http.StatusMovedPermanently)
+}
+
+func randSeq() string {
+	arr := make([]rune, Short_Len)
+	for i := range arr {
+		arr[i] = letters[rand.Intn(len(letters))]
+	}
+	return string(arr)
 }
 
 func short(w http.ResponseWriter, r *http.Request) {
-	// -- Get url for shorting
-	// -- Generate short url
-	// -- Check new url in db for uniq
-	// -- Save data in db
+	url := r.FormValue("url")
+	log.Println("URL : ", url)
+
+	short_name := randSeq()
+	short_key := "short_" + short_name + "_url"
+	short_num := "short_" + short_name + "_num"
+	log.Println("Short key : ", short_key)
+
+	// Loop for checking key not present in DB
+	for {
+		_, err := rdb.Get(ctx, short_key).Result()
+		if errors.Is(err, redis.Nil) {
+			// Key not found in DB so storend new data
+			err = rdb.Set(ctx, short_key, url, EXPERATION).Err()
+			check(err)
+			err = rdb.Set(ctx, short_num, 0, EXPERATION).Err()
+			check(err)
+			break
+		}
+		// check other errors
+		check(err)
+	}
 	// -- Redirect to status page
+	t, err := template.ParseFiles("template/saved.html", "template/footer.html", "template/header.html")
+	check(err)
+
+	// Fill data for temlate
+	data := struct {
+		URL   string
+		Short string
+	}{URL: url, Short: short_name}
+	t.ExecuteTemplate(w, "saved", data)
 }
 
 func status(w http.ResponseWriter, r *http.Request) {
