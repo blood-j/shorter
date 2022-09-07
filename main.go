@@ -38,8 +38,6 @@ var (
 func check(err error) {
 	if err != nil {
 		log.Panicln(err.Error())
-		fmt.Println(err.Error())
-		panic(1)
 	}
 }
 
