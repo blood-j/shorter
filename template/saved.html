@@ -1,0 +1,17 @@
+{{ define "saved" }}
+{{ template "header" }}
+<main class="px-3">
+    <ul class="list-group"></ul>
+    <li class="list-group-item">
+        <h1>Вашь адрес : {{ .URL }} </h1>
+    </li>
+    <li class="list-group-item">
+        <h1>Короткая ссылка : {{ .Short }} </h1>
+    </li>
+    </ul>
+
+    <a href="/" class="btn btn-lg btn-secondary fw-bold border-white bg-white">Вернуться на главную</a>
+</main>
+
+{{ template "footer" }}
+{{ end }}
