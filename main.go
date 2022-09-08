@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"html/template"
 	"log"
@@ -114,27 +113,23 @@ func randSeq() string {
 func short(w http.ResponseWriter, r *http.Request) {
 	url := r.FormValue("url")
 	log.Println("URL : ", url)
-
-	short_name := randSeq()
-	short_key := "short_" + short_name + "_url"
-	short_num := "short_" + short_name + "_num"
-	log.Println("Short key : ", short_key)
+	var short_name string
 
 	// Loop for checking key not present in DB
 	for {
-		_, err := rdb.Get(ctx, short_key).Result()
-		if errors.Is(err, redis.Nil) {
-			// Key not found in DB so storend new data
-			err = rdb.Set(ctx, short_key, url, EXPERATION).Err()
-			check(err)
-			err = rdb.Set(ctx, short_num, 0, EXPERATION).Err()
-			check(err)
-			break
+		short_name = randSeq()
+		short_key := "short_" + short_name + "_url"
+		short_num := "short_" + short_name + "_num"
+		log.Println("Short key : ", short_key)
+
+		if rdb.Exists(ctx, short_key) == 0 {
+			continue
 		}
-		// check other errors
+		err := rdb.Set(ctx, short_key, url, EXPERATION).Err()
+		check(err)
+		err = rdb.Set(ctx, short_num, 0, EXPERATION).Err()
 		check(err)
 	}
-	// -- Redirect to status page
 	t, err := template.ParseFiles("template/saved.html", "template/footer.html", "template/header.html")
 	check(err)
 
