@@ -122,7 +122,8 @@ func short(w http.ResponseWriter, r *http.Request) {
 		short_num := "short_" + short_name + "_num"
 		log.Println("Short key : ", short_key)
 
-		if rdb.Exists(ctx, short_key) == 0 {
+		ex, _ := rdb.Exists(ctx, short_key).Result()
+		if ex == 0 {
 			continue
 		}
 		err := rdb.Set(ctx, short_key, url, EXPERATION).Err()
