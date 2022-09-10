@@ -7,6 +7,7 @@ import (
 	"log"
 	"math/rand"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-redis/redis/v8"
@@ -60,7 +61,8 @@ func main() {
 	rtr := mux.NewRouter()
 	rtr.HandleFunc("/", index)
 	rtr.HandleFunc("/short", short).Methods("POST")
-	rtr.HandleFunc("/status/{req}", status)
+	rtr.HandleFunc("/info/{req}", info_short)
+	rtr.HandleFunc("/status", status_full)
 	rtr.HandleFunc("/{req}", req)
 
 	http.Handle("/", rtr)
@@ -110,27 +112,28 @@ func randSeq() string {
 	return string(arr)
 }
 
+// Ganerate short link
 func short(w http.ResponseWriter, r *http.Request) {
 	url := r.FormValue("url")
 	log.Println("URL : ", url)
-	var short_name string
+	var (
+		short_name string
+		ex         int64 = 1
+	)
 
 	// Loop for checking key not present in DB
-	for {
+	for ex == 1 {
 		short_name = randSeq()
-		short_key := "short_" + short_name + "_url"
-		short_num := "short_" + short_name + "_num"
-		log.Println("Short key : ", short_key)
-
-		ex, _ := rdb.Exists(ctx, short_key).Result()
-		if ex == 0 {
-			continue
-		}
-		err := rdb.Set(ctx, short_key, url, EXPERATION).Err()
-		check(err)
-		err = rdb.Set(ctx, short_num, 0, EXPERATION).Err()
-		check(err)
+		ex, _ = rdb.Exists(ctx, "short_"+short_name+"_url").Result()
 	}
+
+	// Svae in database
+	err := rdb.Set(ctx, "short_"+short_name+"_url", url, EXPERATION).Err()
+	check(err)
+	err = rdb.Set(ctx, "short_"+short_name+"_num", 0, EXPERATION).Err()
+	check(err)
+
+	// Generate temlate
 	t, err := template.ParseFiles("template/saved.html", "template/footer.html", "template/header.html")
 	check(err)
 
@@ -142,8 +145,67 @@ func short(w http.ResponseWriter, r *http.Request) {
 	t.ExecuteTemplate(w, "saved", data)
 }
 
-func status(w http.ResponseWriter, r *http.Request) {
-	// -- Get url, separate short link
-	// -- Get info, from db
-	// -- Show status page
+func status_full(w http.ResponseWriter, r *http.Request) {
+	var info map[string]string
+	info = make(map[string]string)
+
+	db_info, _ := rdb.Info(ctx).Result()
+	str := strings.Split(db_info, "\n")
+	for _, j := range str {
+		if strings.Index(j, ":") > 2 {
+			sstr := strings.Split(j, ":")
+			info[sstr[0]] = sstr[1]
+		}
+	}
+
+	t, err := template.ParseFiles("template/status_full.html", "template/footer.html", "template/header.html")
+	check(err)
+
+	// Fill data for temlate
+	t.ExecuteTemplate(w, "status_full", info)
+}
+
+func info_short(w http.ResponseWriter, r *http.Request) {
+	var info map[string]string
+	url := r.URL.Path
+	log.Printf("req %s", url)
+	// Remove leading /
+	short_name := url[1:]
+
+	info = make(map[string]string)
+
+	db_info, _ := rdb.Info(ctx).Result()
+	str := strings.Split(db_info, "\n")
+	for _, j := range str {
+		if strings.Index(j, ":") > 2 {
+			sstr := strings.Split(j, ":")
+			info[sstr[0]] = sstr[1]
+		}
+	}
+
+	t, err := template.ParseFiles("template/status_full.html", "template/footer.html", "template/header.html")
+	check(err)
+
+	// Fill data for temlate
+	t.ExecuteTemplate(w, "status_full", info)
+}
+
+func info_long(w http.ResponseWriter, r *http.Request) {
+	var info map[string]string
+	info = make(map[string]string)
+
+	db_info, _ := rdb.GET(ctx).Result()
+	str := strings.Split(db_info, "\n")
+	for _, j := range str {
+		if strings.Index(j, ":") > 2 {
+			sstr := strings.Split(j, ":")
+			info[sstr[0]] = sstr[1]
+		}
+	}
+
+	t, err := template.ParseFiles("template/status_full.html", "template/footer.html", "template/header.html")
+	check(err)
+
+	// Fill data for temlate
+	t.ExecuteTemplate(w, "status_full", info)
 }
